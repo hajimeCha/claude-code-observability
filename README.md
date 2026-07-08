@@ -1,5 +1,8 @@
 # Claude Code Observability Stack (個人ローカル用 / チーム展開可)
 
+<img width="1917" height="910" alt="スクリーンショット 2026-07-08 100009" src="https://github.com/user-attachments/assets/793f2039-28e2-4635-9b99-078f54a985ef" />
+
+
 > **注記**: これは個人が趣味で構築した非公式のツールです。Anthropic 公式の製品ではありません。
 
 Claude Code / ECC (Everything Claude Code) の利用状況を、自分の PC 上の Grafana で可視化するためのスタックです。**各自が自分のローカルにそのまま構築できる**ように作られています。
