@@ -1,0 +1,82 @@
+name: claude-code-observability
+
+# 個人用ローカル可観測性スタック。
+# Claude Code (WSL ホスト) が OTLP/gRPC で localhost:4317 に push し、
+# otel-collector が受けて metrics→Prometheus / logs→Loki に振り分け、Grafana で可視化する。
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.127.0
+    container_name: cco-otel-collector
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "${OTLP_GRPC_PORT:-4317}:4317"   # OTLP gRPC  … Claude Code はここへ push
+      - "${OTLP_HTTP_PORT:-4318}:4318"   # OTLP HTTP  … 予備 (http/protobuf を使う場合)
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: cco-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=90d"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"   # Prometheus UI (デバッグ用)
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.3.2
+    container_name: cco-loki
+    command: ["-config.file=/etc/loki/loki-config.yaml"]
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "${LOKI_PORT:-3100}:3100"   # Loki (デバッグ用)
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: cco-grafana
+    environment:
+      # 個人ローカル用途なのでログイン不要の匿名 Admin。外部公開しないこと。
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_USERS_DEFAULT_THEME=light
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"   # Grafana UI → デフォルト http://localhost:3001 (.env の GRAFANA_PORT で変更可)
+    depends_on:
+      - prometheus
+      - loki
+    restart: unless-stopped
+
+  # トレース基盤 (任意 / 「A方式」でツール入出力を残す場合のみ)。
+  # profiles により、既定の `docker compose up -d` では起動しない。
+  # 有効化: `docker compose --profile traces up -d` かつ settings.json のトレース系 env を設定 (README 6章)。
+  tempo:
+    image: grafana/tempo:2.6.1
+    container_name: cco-tempo
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "${TEMPO_PORT:-3200}:3200"   # Tempo API (デバッグ用)
+    profiles: ["traces"]
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  loki-data:
+  grafana-data:
+  tempo-data:

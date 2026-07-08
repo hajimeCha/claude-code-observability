@@ -1,0 +1,45 @@
+# Loki 3.x シングルバイナリ構成 (個人ローカル用)。OTLP ingestion を有効化。
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  log_level: warn
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  # OTLP のリソース/スコープ属性を structured metadata として保持するのに必要
+  allow_structured_metadata: true
+  volume_enabled: true
+  # 生ログ(イベント本文)は直近の確認用なので短め保持。
+  # 長期のトレンド分析用の数値は Prometheus 側(90d)に別途残る。
+  retention_period: 7d
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+analytics:
+  reporting_enabled: false

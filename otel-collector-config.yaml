@@ -1,0 +1,59 @@
+# OpenTelemetry Collector 設定
+# Claude Code からの OTLP を受け、metrics は Prometheus 形式で公開、logs は Loki(OTLP) へ転送する。
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 10s
+
+exporters:
+  # メトリクス: Prometheus がスクレイプする :8889/metrics を公開。
+  # add_metric_suffixes: false で unit/_total サフィックスを付けず名前を予測可能に保つ
+  #   → claude_code.cost.usage は claude_code_cost_usage になる (PromQL の rate/increase は counter でそのまま動く)
+  # resource_to_telemetry_conversion で resource 属性 (service.name 等) もラベル化する
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    add_metric_suffixes: false
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  # ログ/イベント: Loki 3.x のネイティブ OTLP エンドポイント (/otlp/v1/logs) へ
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+
+  # トレース: Tempo へ OTLP/gRPC で転送 (「A方式」= OTEL_LOG_TOOL_CONTENT でツール入出力を span 記録する場合)。
+  # Tempo は docker-compose の profiles:["traces"] のため既定では起動しない。トレース未使用時は
+  # このパイプラインにデータが流れない (Claude 側で OTEL_TRACES_EXPORTER 等を設定して初めて届く) ので実害はない。
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+  # 疎通確認用。docker compose logs otel-collector で受信を目視できる
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus, debug]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/loki, debug]
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/tempo, debug]
+  telemetry:
+    logs:
+      level: info
